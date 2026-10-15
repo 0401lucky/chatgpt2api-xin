@@ -20,6 +20,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException
@@ -44,6 +45,28 @@ HEADLESS = os.getenv("SENTINEL_SOLVER_HEADLESS", "true").strip().lower() not in 
 READY_TIMEOUT_SECONDS = 60
 
 
+def _playwright_proxy(proxy_url: str) -> dict[str, str] | None:
+    """把可能内嵌凭据的代理 URL 转成 Playwright 的 proxy 配置。
+
+    Playwright 的 proxy.server 不接受 user:pass@ 形式的内嵌凭据，会报
+    ERR_INVALID_AUTH_CREDENTIALS，必须拆成 username/password 字段。
+    """
+    if not proxy_url:
+        return None
+    parsed = urlsplit(proxy_url)
+    if not parsed.hostname:
+        return {"server": proxy_url}
+    server = f"{parsed.scheme}://{parsed.hostname}" if parsed.scheme else parsed.hostname
+    if parsed.port:
+        server += f":{parsed.port}"
+    settings = {"server": server}
+    if parsed.username:
+        settings["username"] = unquote(parsed.username)
+    if parsed.password:
+        settings["password"] = unquote(parsed.password)
+    return settings
+
+
 class SolverPage:
     """维护一个已通过 Cloudflare 校验的 chatgpt.com 页面，按需重开。"""
 
@@ -65,8 +88,9 @@ class SolverPage:
             "channel": "chromium",
             "args": ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-dev-shm-usage"],
         }
-        if PROXY:
-            launch_kwargs["proxy"] = {"server": PROXY}
+        proxy = _playwright_proxy(PROXY)
+        if proxy:
+            launch_kwargs["proxy"] = proxy
         self._browser = await self._playwright.chromium.launch(**launch_kwargs)
         if not self.user_agent:
             major = self._browser.version.split(".")[0]
