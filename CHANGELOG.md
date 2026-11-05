@@ -2,6 +2,9 @@
 
 ## Unreleased
 
++ [新增] 参考上游 PR #424 接入 `/v1/images/generations/gif` 与 `/v1/images/edits/gif`，复用现有鉴权、输入校验、日志和图片执行流程；GIF 请求固定返回 JSON，生成流和结果轮询各使用 300 秒预算，普通图片超时配置不变。
++ [优化] 图片结果返回实际 `mime_type` 和 `animated`；本地及 WebDAV 存储、同步和下载保留 GIF 原始格式与动画帧，GIF 跳过静态图片放大，并纳入图库和磁盘清理。
+
 ## 3.2.3 - 2026-09-09
 
 + [新增] Python 图片接口和共享模型列表支持 `gpt-image-2.5`、`gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`，通过 ChatGPT Web 的 `auto` 路由兼容，不包含 `exact` 别名。

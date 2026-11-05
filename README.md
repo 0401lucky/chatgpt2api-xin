@@ -161,6 +161,8 @@ Authorization: Bearer <auth-key>
 | `/v1/search`                        | `POST`       | 返回回答、引用来源和搜索结果                         |
 | `/v1/images/generations`            | `POST`       | 图片生成，支持 `n=1..4`                              |
 | `/v1/images/edits`                  | `POST`       | multipart、远程 URL、base64、data URL 和多参考图编辑 |
+| `/v1/images/generations/gif`        | `POST`       | 按提示词请求循环 GIF，输入参数与图片生成相同          |
+| `/v1/images/edits/gif`              | `POST`       | 将参考图制作成循环 GIF，输入方式与图片编辑相同        |
 | `/v1/editable-file-tasks`           | `GET / POST` | 创建与查询 PPT / PSD 可编辑文件任务                  |
 | `/v1/editable-file-tasks/{task_id}` | `DELETE`     | 删除当前密钥所属任务                                 |
 | `/v1/ppt/generations`               | `POST`       | PPT 任务快捷入口                                     |
@@ -194,6 +196,31 @@ curl http://localhost:3000/v1/images/generations \
 </details>
 
 实际可用模型以上游账号和 `/v1/models` 返回值为准。
+
+<details>
+<summary>GIF 生成与参考图示例</summary>
+
+```bash
+curl http://localhost:3000/v1/images/generations/gif \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <auth-key>" \
+  -d '{"model":"gpt-image-2.5","prompt":"一只挥手的小猫，动作平滑循环","response_format":"url"}'
+
+curl http://localhost:3000/v1/images/edits/gif \
+  -H "Authorization: Bearer <auth-key>" \
+  -F 'model=gpt-image-2.5' \
+  -F 'prompt=让参考图中的小猫挥手，动作平滑循环' \
+  -F 'image=@cat.png' \
+  -F 'response_format=url'
+```
+
+GIF 接口固定返回普通 JSON，即使传入 `stream=true`。上游生成流和结果轮询各有 300 秒预算，总请求预算为 630 秒；普通图片接口继续使用已有超时配置。
+
+图片结果的 `data` 项包含实际文件的 `mime_type`、`animated`、`width` 和 `height`，以及所选的 `url` 或 `b64_json`。GIF 原始字节、动画帧和循环信息会保留，GIF 不执行静态图片放大，图库缩略图仍为静态预览。
+
+建议使用 ChatGPT Web 图片模型，例如 `gpt-image-2.5`。是否生成动图取决于上游账号和模型，接口不会把静态图片自动转换成动画；请检查返回的 `mime_type` 和 `animated`。Codex 图片传输当前仍请求 PNG 输出。
+
+</details>
 
 ## 关键配置
 

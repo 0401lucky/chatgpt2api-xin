@@ -38,7 +38,7 @@ from services.image_failure import (
     public_image_error_message,
     terminal_assistant_text,
 )
-from services.image_storage_service import image_storage_service
+from services.image_storage_service import image_media_info, image_storage_service
 from services.image_upscale_service import upscale_image_if_needed
 from services.openai_backend_api import OpenAIBackendAPI
 from services.proxy_service import ImageEgressDeadlineError, proxy_settings
@@ -507,7 +507,12 @@ def format_image_result(
         )
         if stored_url:
             image_urls.append(stored_url)
-        asset: dict[str, Any] = {"revised_prompt": revised_prompt}
+        mime_type, animated = image_media_info(image_bytes)
+        asset: dict[str, Any] = {
+            "revised_prompt": revised_prompt,
+            "mime_type": mime_type,
+            "animated": animated,
+        }
         if response_format == "b64_json":
             asset["b64_json"] = base64.b64encode(image_bytes).decode("ascii")
         else:
@@ -542,6 +547,7 @@ class ConversationRequest:
     trace_image_perf: bool = False
     monitor_attempt: int = 0
     deadline_monotonic: float = 0.0
+    image_timeout_secs: float | None = None
 
 
 @dataclass
@@ -1057,6 +1063,7 @@ def conversation_events(
     size: str | None = None,
     quality: str = "auto",
     thinking_effort: str = "",
+    image_timeout_secs: float | None = None,
 ) -> Iterator[dict[str, Any]]:
     normalized = normalize_messages(messages or ([{"role": "user", "content": prompt}] if prompt else []))
     image_model = is_supported_image_model(model)
@@ -1070,6 +1077,7 @@ def conversation_events(
         images=images if image_model else None,
         system_hints=["picture_v2"] if image_model else None,
         thinking_effort=thinking_effort if not image_model else "",
+        image_timeout_secs=image_timeout_secs if image_model else None,
     )
     yield from iter_conversation_payloads(
         payloads,
@@ -1328,6 +1336,7 @@ def _image_stream_timeout_error(
         upstream_error: str = "",
         raw_upstream_message: str = "",
         failure_code: str = "image_stream_timeout",
+        stream_timeout_secs: float | None = None,
 ) -> ImageGenerationError:
     exc = ImageGenerationError(
         raw_error,
@@ -1338,7 +1347,7 @@ def _image_stream_timeout_error(
         raw_upstream_message=diagnostic_excerpt(raw_upstream_message, 4000),
     )
     if failure_code == "image_stream_timeout":
-        setattr(exc, "stream_timeout_secs", config.image_stream_timeout_secs)
+        setattr(exc, "stream_timeout_secs", stream_timeout_secs or config.image_stream_timeout_secs)
     setattr(exc, "stream_timeout_followup", followup)
     if followup.get("task_error"):
         setattr(exc, "last_task_error", followup["task_error"])
@@ -1359,11 +1368,12 @@ def _recover_after_image_stream_timeout(
         failure_code: str = "image_stream_timeout",
 ) -> ImageOutput:
     is_timeout = failure_code == "image_stream_timeout"
+    stream_timeout_secs = request.image_timeout_secs or config.image_stream_timeout_secs
     recovery_reason = "stream_timeout" if is_timeout else "stream_interrupted"
     recovery_path = f"{recovery_reason}_followup"
     followup_reason = "sse_timeout" if is_timeout else "sse_interrupted"
     raw_error = str(timeout_error) or (
-        f"SSE stream exceeded {config.image_stream_timeout_secs}s"
+        f"SSE stream exceeded {stream_timeout_secs}s"
         if is_timeout else "SSE stream interrupted"
     )
     conversation_id = str(last.get("conversation_id") or "")
@@ -1397,7 +1407,7 @@ def _recover_after_image_stream_timeout(
         },
     }
     if is_timeout:
-        followup["timeout_secs"] = config.image_stream_timeout_secs
+        followup["timeout_secs"] = stream_timeout_secs
     stream_failure = last.get("_image_failure")
     stream_failure = stream_failure if isinstance(stream_failure, ImageFailure) else None
     task_failure: ImageFailure | None = None
@@ -1530,7 +1540,7 @@ def _recover_after_image_stream_timeout(
             raw_upstream_message=terminal_upstream_text,
         )
         if is_timeout:
-            setattr(terminal_exc, "stream_timeout_secs", config.image_stream_timeout_secs)
+            setattr(terminal_exc, "stream_timeout_secs", stream_timeout_secs)
         setattr(terminal_exc, "stream_timeout_followup", followup)
         if conversation_snapshot:
             setattr(terminal_exc, "last_conversation_snapshot", conversation_snapshot)
@@ -1562,6 +1572,7 @@ def _recover_after_image_stream_timeout(
         upstream_error=task_error,
         raw_upstream_message=timeout_upstream_text,
         failure_code=failure_code,
+        stream_timeout_secs=stream_timeout_secs,
     )
 
 
@@ -1660,6 +1671,7 @@ def stream_image_outputs(
                 images=request.images or [],
                 size=request.size,
                 quality=request.quality,
+                image_timeout_secs=request.image_timeout_secs,
         ):
             last = event
             if event.get("type") == "conversation.delta":
@@ -1876,7 +1888,7 @@ def stream_image_outputs(
         conversation_id,
         file_ids,
         sediment_ids,
-        poll_timeout_secs=config.image_poll_timeout_secs,
+        poll_timeout_secs=request.image_timeout_secs or config.image_poll_timeout_secs,
         index=index,
         total=total,
     )
@@ -1958,6 +1970,7 @@ def stream_codex_image_outputs(
         images=request.images or [],
         size=request.size,
         quality=request.quality,
+        image_timeout_secs=request.image_timeout_secs,
     ))
     images = _codex_response_images(events)
     failure: ImageFailure | None = None
@@ -2571,7 +2584,8 @@ def _generate_single_image(
             attempt_conversation_id = str(getattr(exc, "conversation_id", "") or attempt_conversation_id)
             stream_error_ms = int((time.perf_counter() - stream_started) * 1000) if stream_started > 0 else 0
             http_timing = _backend_http_timing_data(backend)
-            quick_timeout_retry_ms = min(30000, max(5000, int(config.image_stream_timeout_secs * 1000 * 0.2)))
+            stream_timeout_secs = request.image_timeout_secs or config.image_stream_timeout_secs
+            quick_timeout_retry_ms = min(30000, max(5000, int(stream_timeout_secs * 1000 * 0.2)))
             early_connection_failure = (
                 not emitted_for_token
                 and (stream_error_ms == 0 or stream_error_ms <= quick_timeout_retry_ms)
@@ -2750,8 +2764,13 @@ def stream_image_outputs_with_pool(request: ConversationRequest) -> Iterator[Ima
         )
 
     if request.deadline_monotonic <= 0:
+        timeout_secs = (
+            2 * request.image_timeout_secs + 30
+            if request.image_timeout_secs is not None
+            else config.image_request_timeout_secs
+        )
         request.deadline_monotonic = (
-            time.monotonic() + max(0.001, float(config.image_request_timeout_secs))
+            time.monotonic() + max(0.001, float(timeout_secs))
         )
 
     if request.n <= 1:

@@ -146,6 +146,8 @@ Authorization: Bearer <auth-key>
 | `/v1/search` | `POST` | Returns an answer, citations, and search results |
 | `/v1/images/generations` | `POST` | Image generation with `n=1..4` |
 | `/v1/images/edits` | `POST` | Image editing from multipart files, remote URLs, base64, data URLs, or multiple references |
+| `/v1/images/generations/gif` | `POST` | Requests a looping GIF using the image-generation inputs |
+| `/v1/images/edits/gif` | `POST` | Requests a looping GIF from reference images using the image-edit inputs |
 | `/v1/editable-file-tasks` | `GET / POST` | Creates and queries editable PPT/PSD tasks |
 | `/v1/editable-file-tasks/{task_id}` | `DELETE` | Deletes a task owned by the current key |
 | `/v1/ppt/generations` | `POST` | PPT task shortcut |
@@ -179,6 +181,31 @@ curl http://localhost:3000/v1/images/generations \
 </details>
 
 Available models depend on the upstream accounts and the current `/v1/models` response.
+
+<details>
+<summary>GIF generation and reference-image examples</summary>
+
+```bash
+curl http://localhost:3000/v1/images/generations/gif \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <auth-key>" \
+  -d '{"model":"gpt-image-2.5","prompt":"A waving cat, smoothly looping animation","response_format":"url"}'
+
+curl http://localhost:3000/v1/images/edits/gif \
+  -H "Authorization: Bearer <auth-key>" \
+  -F 'model=gpt-image-2.5' \
+  -F 'prompt=Make the reference cat wave in a smooth loop' \
+  -F 'image=@cat.png' \
+  -F 'response_format=url'
+```
+
+GIF endpoints always return ordinary JSON, including when `stream=true` is supplied. The upstream stream and result polling each have a 300-second budget, within a 630-second request budget. Ordinary image endpoints retain their configured timeouts.
+
+Image result items include the actual file's `mime_type`, `animated`, `width`, and `height`, plus the selected `url` or `b64_json` representation. GIF bytes, animation frames, and loop metadata are preserved. GIFs bypass static-image upscaling; gallery thumbnails remain static previews.
+
+Use a ChatGPT Web image model such as `gpt-image-2.5`. Animation availability depends on the upstream account and model: the API does not convert a static image into an animation. Check `mime_type` and `animated` in the response. The Codex image transport still requests PNG output.
+
+</details>
 
 ## Configuration
 

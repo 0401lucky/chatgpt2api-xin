@@ -38,6 +38,32 @@ compatibility names and do not force a particular official API image engine or
 quality entitlement. Existing `gpt-image-2` and Codex routing and the default
 image model remain unchanged.
 
+### GIF image endpoints
+
+`api.ai.create_router` exposes `/v1/images/generations/gif` and
+`/v1/images/edits/gif` as variants of the existing image handlers. They reuse
+authentication, reference-input validation, content filtering, trace headers,
+and `LoggedCall`; add a looping-GIF instruction; and force non-streaming JSON.
+`ConversationRequest.image_timeout_secs` carries the internal 300-second
+override through upstream HTTP/SSE and result polling. The existing request
+lifecycle uses a 630-second total budget for these variants, including its
+30-second allowance. Ordinary calls continue to use configured timeouts.
+
+`format_image_result` reports actual `mime_type` and `animated` alongside the
+existing image representation and measured dimensions.
+`services.image_storage_service.image_media_info` owns format
+detection for output metadata, filename extensions, and WebDAV uploads,
+including synchronization and repair. GIFs are indexed as Image Assets;
+`image_service` serves and downloads them with `image/gif` and includes them in
+disk-threshold cleanup. `upscale_image_if_needed` preserves GIFs and other
+animated sources without re-encoding them. Thumbnail generation remains a
+static PNG preview.
+
+GIF output is an upstream capability, not a local animation renderer. A static
+upstream result remains static and is reported accurately. The Codex image
+transport continues to request PNG output. Public examples are maintained in
+[`README.md`](../../README.md).
+
 ## Domain and persistence ownership
 
 | Domain | Owning Module | Stable Interface/output | Persistence |

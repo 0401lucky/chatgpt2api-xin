@@ -27,6 +27,8 @@ from services.protocol import (
 )
 from utils.helper import has_response_image_generation_tool, is_image_chat_request
 
+GIF_GENERATION_TIMEOUT_SECS = 300
+
 
 class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
@@ -130,6 +132,7 @@ def create_router() -> APIRouter:
         except Exception as exc:
             raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
+    @router.post("/v1/images/generations/gif")
     @router.post("/v1/images/generations")
     async def generate_images(
             body: ImageGenerationRequest,
@@ -138,13 +141,20 @@ def create_router() -> APIRouter:
     ):
         identity = require_identity(authorization)
         payload = body.model_dump(mode="python")
+        gif = request.url.path.endswith("/gif")
+        if gif:
+            payload["prompt"] = f"请生成一段可循环播放的动画 GIF：{body.prompt}"
+            payload["stream"] = False
+            payload["image_timeout_secs"] = GIF_GENERATION_TIMEOUT_SECS
         payload["base_url"] = resolve_image_base_url(request)
-        call = LoggedCall(identity, "/v1/images/generations", body.model, "文生图", request_text=body.prompt)
+        endpoint = "/v1/images/generations/gif" if gif else "/v1/images/generations"
+        call = LoggedCall(identity, endpoint, body.model, "GIF 动图生成" if gif else "文生图", request_text=body.prompt)
         attach_trace_headers(call, request)
         call.attach_trace_metadata(payload)
-        await filter_or_log(call, body.prompt)
+        await filter_or_log(call, str(payload["prompt"]))
         return await call.run(openai_v1_image_generations.handle, payload)
 
+    @router.post("/v1/images/edits/gif")
     @router.post("/v1/images/edits")
     async def edit_images(
             request: Request,
@@ -154,10 +164,16 @@ def create_router() -> APIRouter:
         payload, image_sources, mask_sources = await parse_image_edit_request(request)
         prompt = str(payload["prompt"])
         model = str(payload["model"])
-        call = LoggedCall(identity, "/v1/images/edits", model, "图生图", request_text=prompt)
+        gif = request.url.path.endswith("/gif")
+        if gif:
+            payload["prompt"] = f"请将参考图片制作成可循环播放的动画 GIF，动作自然连贯：{prompt}"
+            payload["stream"] = False
+            payload["image_timeout_secs"] = GIF_GENERATION_TIMEOUT_SECS
+        endpoint = "/v1/images/edits/gif" if gif else "/v1/images/edits"
+        call = LoggedCall(identity, endpoint, model, "参考图 GIF 动图生成" if gif else "图生图", request_text=prompt)
         attach_trace_headers(call, request)
         call.attach_trace_metadata(payload)
-        await filter_or_log(call, prompt)
+        await filter_or_log(call, str(payload["prompt"]))
         payload["images"] = await read_image_sources(image_sources)
         if mask_sources:
             payload["mask"] = await read_image_sources(mask_sources)

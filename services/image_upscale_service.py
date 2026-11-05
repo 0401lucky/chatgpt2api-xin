@@ -11,7 +11,6 @@ from PIL import Image, ImageOps
 
 from services.config import config
 from utils.diagnostics import diagnostic_excerpt
-from utils.image_tokens import image_size_from_bytes
 from utils.log import logger
 
 
@@ -75,8 +74,14 @@ def upscale_image_if_needed(image_data: bytes, requested_size: object) -> bytes:
     if not image_data or not config.image_upscale_enabled:
         return image_data
     target = _target_size(requested_size)
-    source = image_size_from_bytes(image_data)
-    if not target or not source:
+    if not target:
+        return image_data
+    try:
+        with Image.open(io.BytesIO(image_data)) as image:
+            if image.format == "GIF" or getattr(image, "is_animated", False):
+                return image_data
+            source = image.size
+    except Exception:
         return image_data
     if source[0] >= target[0] and source[1] >= target[1]:
         return image_data

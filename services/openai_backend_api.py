@@ -1108,10 +1108,12 @@ class OpenAIBackendAPI:
             images: list[str] | None = None,
             size: str | None = None,
             quality: str = "auto",
+            image_timeout_secs: float | None = None,
     ) -> Iterator[Dict[str, Any]]:
         if not self.access_token:
             raise RuntimeError("access_token is required for codex image endpoints")
         self._ensure_codex_source_account()
+        stream_timeout = image_timeout_secs or config.image_stream_timeout_secs
         path = "/backend-api/codex/responses"
         payload = {
             "model": CODEX_RESPONSES_MODEL,
@@ -1144,7 +1146,7 @@ class OpenAIBackendAPI:
             "event": "codex_responses_request_debug",
             "url": self.base_url + path,
             "transport": "urllib.request",
-            "timeout_secs": config.image_stream_timeout_secs,
+            "timeout_secs": stream_timeout,
             "account_email": str(account.get("email") or "").strip(),
             "source_type": str(account.get("source_type") or "").strip(),
             "account_type": str(account.get("type") or "").strip(),
@@ -1176,7 +1178,6 @@ class OpenAIBackendAPI:
                 if key.lower() != "authorization"
             },
         })
-        stream_timeout = config.image_stream_timeout_secs
         try:
             with urllib.request.urlopen(request, timeout=stream_timeout) as raw:
                 yield from self._iter_codex_response_events(raw, max_duration_secs=stream_timeout)
@@ -1322,6 +1323,7 @@ class OpenAIBackendAPI:
         references: Optional[list[Dict[str, Any]]] = None,
         trace_id: str = "",
         msg_id: str = "",
+        timeout_secs: float | None = None,
     ) -> requests.Response:
         """启动图片生成或编辑的 SSE 请求。"""
         references = references or []
@@ -1399,7 +1401,7 @@ class OpenAIBackendAPI:
             "client_prepare_state": "success",
         }
         path = "/backend-api/f/conversation"
-        timeout_secs = config.image_stream_timeout_secs
+        timeout_secs = timeout_secs or config.image_stream_timeout_secs
         transport_timeout_secs = max(timeout_secs + 30, timeout_secs * 1.1)
         curl_options = getattr(self.session, "curl_options", None)
         previous_total_timeout = None
@@ -3666,10 +3668,11 @@ class OpenAIBackendAPI:
             images: Optional[list[str]] = None,
             system_hints: Optional[list[str]] = None,
             thinking_effort: str = "",
+            image_timeout_secs: float | None = None,
     ) -> Iterator[str]:
         system_hints = system_hints or []
         if "picture_v2" in system_hints:
-            yield from self._stream_picture_conversation(prompt, model, images or [])
+            yield from self._stream_picture_conversation(prompt, model, images or [], image_timeout_secs)
             return
 
         normalized = messages or [{"role": "user", "content": prompt}]
@@ -3703,6 +3706,7 @@ class OpenAIBackendAPI:
             prompt: str,
             model: str,
             images: list[str],
+            timeout_secs: float | None = None,
     ) -> Iterator[str]:
         if not self.access_token:
             raise RuntimeError("access_token is required for image endpoints")
@@ -3717,12 +3721,16 @@ class OpenAIBackendAPI:
         msg_id = new_uuid()
         conduit_token = self._prepare_image_conversation(prompt, requirements, model, trace_id=trace_id, msg_id=msg_id)
         self._report_progress("starting_generation")
-        response = self._start_image_generation(prompt, requirements, conduit_token, model, references, trace_id=trace_id, msg_id=msg_id)
+        timeout_secs = timeout_secs or config.image_stream_timeout_secs
+        response = self._start_image_generation(
+            prompt, requirements, conduit_token, model, references,
+            trace_id=trace_id, msg_id=msg_id, timeout_secs=timeout_secs,
+        )
         self._report_progress("generating")
         try:
             for payload in self._iter_timed_sse_payloads(
                 response,
-                max_duration_secs=config.image_stream_timeout_secs,
+                max_duration_secs=timeout_secs,
                 timing_key="image_generation_stream",
             ):
                 yield payload

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import mimetypes
 import time
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ from utils.timezone import beijing_datetime_from_timestamp, beijing_now, beijing
 
 IMAGE_INDEX_FILE = DATA_DIR / "image_index.json"
 IMAGE_INDEX_LOCK = Lock()
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 IMAGE_SYNC_MERGE_BATCH_SIZE = 64
 IMAGE_MUTATION_BATCH_SIZE = 16
 
@@ -115,6 +116,18 @@ def _image_dimensions(payload: bytes) -> tuple[int, int] | None:
         return None
 
 
+def image_media_info(payload: bytes) -> tuple[str, bool]:
+    """Identify the stored image format without re-encoding its frames."""
+    try:
+        with Image.open(io.BytesIO(payload)) as image:
+            return (
+                Image.MIME.get(image.format, "image/png"),
+                bool(getattr(image, "is_animated", False)),
+            )
+    except Exception:
+        return "image/png", False
+
+
 def _is_image_rel(path: str) -> bool:
     try:
         safe_rel = normalize_image_relative_path(path)
@@ -194,7 +207,9 @@ class WebDAVClient:
             if response.status_code >= 400:
                 raise ImageStorageError(f"WebDAV MKCOL failed: HTTP {response.status_code}")
 
-    def put(self, rel: str, payload: bytes, content_type: str = "image/png") -> str:
+    def put(self, rel: str, payload: bytes, content_type: str | None = None) -> str:
+        if content_type is None:
+            content_type, _ = image_media_info(payload)
         self.ensure_dirs(rel)
         url = self.remote_url(rel)
         self._request("PUT", url, data=payload, headers={"Content-Type": content_type})
@@ -407,7 +422,11 @@ class ImageStorageService:
 
     def make_relative_path(self, image_data: bytes) -> str:
         file_hash = hashlib.md5(image_data).hexdigest()
-        filename = f"{int(time.time())}_{file_hash}.png"
+        media_type, _ = image_media_info(image_data)
+        extension = ".jpg" if media_type == "image/jpeg" else mimetypes.guess_extension(media_type)
+        if extension not in IMAGE_EXTENSIONS:
+            extension = ".png"
+        filename = f"{int(time.time())}_{file_hash}{extension}"
         now = beijing_now()
         relative_dir = Path(now.strftime("%Y"), now.strftime("%m"), now.strftime("%d"))
         return f"{relative_dir.as_posix()}/{filename}"

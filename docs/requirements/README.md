@@ -29,7 +29,9 @@ requirements may move to `archive/` after links and this index are updated.
 
 ## Active requirements
 
-No active PRDs are currently tracked.
+| Requirement | Status |
+| --- | --- |
+| [0001: Animated GIF image APIs](0001-animated-gif-image-api.md) | pending-verification |
 
 PRDs are planning evidence, never proof that the product already behaves as
 described.

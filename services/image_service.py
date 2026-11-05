@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import mimetypes
 import threading
 import zipfile
 from pathlib import Path
@@ -12,6 +13,7 @@ from PIL import Image, ImageOps
 from services.config import config
 from services.gallery_view import gallery_page
 from services.image_storage_service import (
+    IMAGE_EXTENSIONS,
     ImageBatchDeleteError,
     image_local_path,
     image_storage_service,
@@ -41,7 +43,8 @@ def get_image_response(relative_path: str) -> FileResponse | Response:
             image_local_path(relative_path, require_file=True),
             headers=headers,
         )
-    return Response(content=image_storage_service.get_bytes(relative_path), media_type="image/png", headers=headers)
+    media_type = mimetypes.guess_type(relative_path)[0] or "image/png"
+    return Response(content=image_storage_service.get_bytes(relative_path), media_type=media_type, headers=headers)
 
 
 def _thumbnail_path(relative_path: str) -> Path:
@@ -97,7 +100,7 @@ def get_thumbnail_response(relative_path: str) -> FileResponse:
     return FileResponse(ensure_thumbnail(relative_path), headers=headers)
 
 
-def get_image_download_response(relative_path: str) -> FileResponse:
+def get_image_download_response(relative_path: str) -> FileResponse | Response:
     cors_headers = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -114,7 +117,7 @@ def get_image_download_response(relative_path: str) -> FileResponse:
     }
     return Response(
         content=image_storage_service.get_bytes(rel),
-        media_type="image/png",
+        media_type=mimetypes.guess_type(rel)[0] or "image/png",
         headers=headers,
     )
 
@@ -370,7 +373,7 @@ def delete_to_target(target_free_mb: int, dry_run: bool = False) -> dict:
         return {"removed": 0, "current_free_mb": current_free, "target_free_mb": target_free_mb, "done": True}
 
     files = sorted(
-        (p for p in config.images_dir.rglob("*.png") if p.is_file()),
+        (p for p in config.images_dir.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
         key=lambda p: p.stat().st_mtime,
     )
     removals = image_storage_service.delete_local_copies_until(
