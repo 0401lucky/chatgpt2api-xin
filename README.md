@@ -49,7 +49,7 @@
   </tr>
   <tr>
     <td valign="middle">
-      &nbsp;<strong><a href="https://www.ipwo.net/?ref=githubchatgpt2api"><u>IPWO</u></a></strong>&nbsp;覆盖195+地区动态住宅代理、静态住宅代理和不限量住宅代理支持HTTP、HTTPS及SOCKS5协议，为AI应用、多账号管理、自动化及海外网络访问提供灵活的代理解决方案。专属折扣码：<strong>0205</strong>
+      &nbsp;<strong><a href="https://www.ipwo.net/?ref=githubchatgpt2api"><u>IPWO</u></a></strong>&nbsp;覆盖195+地区动态住宅代理、静态住宅代理和不限量住宅代理支持HTTP、HTTPS及SOCKS5协议，为AI应用、多账号管理、自动化及海外网络访问提供灵活的代理解决方案。优惠码：<strong>0205</strong>，即可减免10%。
     </td>
   </tr>
 </table>
@@ -197,6 +197,8 @@ curl http://localhost:3000/v1/images/generations \
 
 实际可用模型以上游账号和 `/v1/models` 返回值为准。
 
+图片生成、编辑、聊天图片和 Responses 图片工具支持 `output_format`：`gif`、`png`、`jpg/jpeg`、`webp`。显式请求 GIF 时需使用设置页 `gif_models` 中启用的模型，默认启用 `gpt-image-2.6`、`gpt-image-2.6-flare` 和 `gpt-image-2.6-sunburst`，并且不能传入 `stream=true`。可选 `frame_count` 和 `frame_duration_ms` 原样传给上游提示词；省略时不补默认值。
+
 <details>
 <summary>GIF 生成与参考图示例</summary>
 
@@ -218,7 +220,7 @@ GIF 接口固定返回普通 JSON，即使传入 `stream=true`。上游生成流
 
 图片结果的 `data` 项包含实际文件的 `mime_type`、`animated`、`width` 和 `height`，以及所选的 `url` 或 `b64_json`。GIF 原始字节、动画帧和循环信息会保留，GIF 不执行静态图片放大，图库缩略图仍为静态预览。
 
-建议使用 ChatGPT Web 图片模型，例如 `gpt-image-2.5`。是否生成动图取决于上游账号和模型，接口不会把静态图片自动转换成动画；请检查返回的 `mime_type` 和 `animated`。Codex 图片传输当前仍请求 PNG 输出。
+建议使用 ChatGPT Web 图片模型，例如 `gpt-image-2.6`。专用 GIF 接口在省略 `output_format` 时保留原有提示词和超时行为。是否生成动图取决于上游账号和模型，接口不会把静态图片自动转换成动画；请检查返回的 `mime_type` 和 `animated`。Codex 图片传输支持所选输出格式，默认请求 PNG。
 
 </details>
 

@@ -182,6 +182,8 @@ curl http://localhost:3000/v1/images/generations \
 
 Available models depend on the upstream accounts and the current `/v1/models` response.
 
+Image generation, edits, image chat, and Responses image tools accept `output_format`: `gif`, `png`, `jpg/jpeg`, or `webp`. Explicit GIF requests require a model enabled in the `gif_models` setting and do not support `stream=true`. The defaults are `gpt-image-2.6`, `gpt-image-2.6-flare`, and `gpt-image-2.6-sunburst`. Optional `frame_count` and `frame_duration_ms` values pass through to the upstream prompt as supplied; omitted values receive no defaults.
+
 <details>
 <summary>GIF generation and reference-image examples</summary>
 
@@ -203,7 +205,7 @@ GIF endpoints always return ordinary JSON, including when `stream=true` is suppl
 
 Image result items include the actual file's `mime_type`, `animated`, `width`, and `height`, plus the selected `url` or `b64_json` representation. GIF bytes, animation frames, and loop metadata are preserved. GIFs bypass static-image upscaling; gallery thumbnails remain static previews.
 
-Use a ChatGPT Web image model such as `gpt-image-2.5`. Animation availability depends on the upstream account and model: the API does not convert a static image into an animation. Check `mime_type` and `animated` in the response. The Codex image transport still requests PNG output.
+Use a ChatGPT Web image model such as `gpt-image-2.6`. Dedicated GIF endpoints retain their existing prompt and timeout behavior when `output_format` is omitted. Animation availability depends on the upstream account and model: the API does not convert a static image into an animation. Check `mime_type` and `animated` in the response. The Codex image transport carries the selected output format and defaults to PNG.
 
 </details>
 

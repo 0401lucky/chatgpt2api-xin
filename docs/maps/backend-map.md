@@ -28,10 +28,22 @@ explicit configured overrides. The console and `/v1/models` consume the same
 catalog; listing models does not query upstream or append upstream-only entries.
 
 `utils.helper.WEB_IMAGE_MODELS` owns the built-in Web image identifiers:
-`gpt-image-2`, `gpt-image-2.5`, `gpt-image-2.5-flare`, and
-`gpt-image-2.5-sunburst`. Model validation and `ModelCatalogService` consume this
-list; Studio consumes the backend catalog. Explicit catalog configuration still
-takes precedence over the built-in list. No `exact` aliases are added.
+`gpt-image-2`, the gpt-image-2.5 aliases, and the
+`gpt-image-2.6`, `gpt-image-2.6-flare`, and `gpt-image-2.6-sunburst` aliases.
+The three 2.6 aliases use the existing `auto` upstream Web slug. Model
+validation and `ModelCatalogService` consume this list; Studio consumes the
+backend catalog. Explicit catalog configuration still takes precedence over
+the built-in list. No `exact` aliases are added.
+
+The persisted `gif_models` setting controls explicit `output_format=gif`
+eligibility per image model.
+It defaults to the three 2.6 aliases and is projected through `/api/settings`.
+Image requests carry optional `output_format`, `frame_count`, and
+`frame_duration_ms` values through the shared image execution request.
+`output_format` accepts `gif`, `png`, `jpg`/`jpeg`, and `webp`. GIF bytes bypass
+raster upscaling/re-encoding and are stored with `.gif` and `image/gif`; the
+other explicit formats are converted locally before storage. Existing `n` and
+multi-image behavior is unchanged.
 
 The 2.5 identifiers use the existing `auto` upstream Web model slug. They are
 compatibility names and do not force a particular official API image engine or
@@ -51,17 +63,19 @@ lifecycle uses a 630-second total budget for these variants, including its
 
 `format_image_result` reports actual `mime_type` and `animated` alongside the
 existing image representation and measured dimensions.
-`services.image_storage_service.image_media_info` owns format
-detection for output metadata, filename extensions, and WebDAV uploads,
-including synchronization and repair. GIFs are indexed as Image Assets;
+`services.image_storage_service.image_media_type` owns format detection for
+filename extensions, serving, and WebDAV uploads, including synchronization
+and repair; `image_media_info` adds animation metadata. GIFs are indexed as Image Assets;
 `image_service` serves and downloads them with `image/gif` and includes them in
 disk-threshold cleanup. `upscale_image_if_needed` preserves GIFs and other
 animated sources without re-encoding them. Thumbnail generation remains a
 static PNG preview.
 
 GIF output is an upstream capability, not a local animation renderer. A static
-upstream result remains static and is reported accurately. The Codex image
-transport continues to request PNG output. Public examples are maintained in
+upstream result remains static and is reported accurately. The dedicated GIF
+routes retain their prompt and timeout behavior when `output_format` is omitted.
+The Codex image transport carries the requested format and defaults to PNG.
+Public examples are maintained in
 [`README.md`](../../README.md).
 
 ## Domain and persistence ownership

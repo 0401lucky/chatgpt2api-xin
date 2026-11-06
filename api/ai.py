@@ -37,6 +37,9 @@ class ImageGenerationRequest(BaseModel):
     size: str | None = None
     quality: str = "auto"
     response_format: str = "b64_json"
+    output_format: str | None = None
+    frame_count: object = None
+    frame_duration_ms: object = None
     history_disabled: bool = True
     stream: bool | None = None
 
@@ -141,6 +144,9 @@ def create_router() -> APIRouter:
     ):
         identity = require_identity(authorization)
         payload = body.model_dump(mode="python")
+        for field in ("output_format", "frame_count", "frame_duration_ms"):
+            if field not in body.model_fields_set:
+                payload.pop(field, None)
         gif = request.url.path.endswith("/gif")
         if gif:
             payload["prompt"] = f"请生成一段可循环播放的动画 GIF：{body.prompt}"
@@ -184,6 +190,9 @@ def create_router() -> APIRouter:
     async def create_chat_completion(body: ChatCompletionRequest, request: Request, authorization: str | None = Header(default=None)):
         identity = require_identity(authorization)
         payload = body.model_dump(mode="python")
+        for key in ("output_format", "frame_count", "frame_duration_ms"):
+            if key not in body.model_fields_set:
+                payload.pop(key, None)
         payload["base_url"] = resolve_image_base_url(request)
         model = str(payload.get("model") or "auto")
         request_preview = request_text(payload.get("prompt"), payload.get("messages"))

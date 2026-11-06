@@ -1109,12 +1109,20 @@ class OpenAIBackendAPI:
             size: str | None = None,
             quality: str = "auto",
             image_timeout_secs: float | None = None,
+            output_format: object = None,
     ) -> Iterator[Dict[str, Any]]:
         if not self.access_token:
             raise RuntimeError("access_token is required for codex image endpoints")
         self._ensure_codex_source_account()
         stream_timeout = image_timeout_secs or config.image_stream_timeout_secs
         path = "/backend-api/codex/responses"
+        requested_output_format = {
+            "gif": "gif",
+            "png": "png",
+            "jpg": "jpeg",
+            "jpeg": "jpeg",
+            "webp": "webp",
+        }.get(str(output_format or "").strip().lower(), "png")
         payload = {
             "model": CODEX_RESPONSES_MODEL,
             "instructions": CODEX_RESPONSES_INSTRUCTIONS,
@@ -1126,7 +1134,7 @@ class OpenAIBackendAPI:
                 "action": "edit" if images else "generate",
                 "size": str(size or "1024x1024"),
                 "quality": str(quality or "auto"),
-                "output_format": "png",
+                "output_format": requested_output_format,
             }],
             "tool_choice": {"type": "image_generation"},
             "stream": True,
