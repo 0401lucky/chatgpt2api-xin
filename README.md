@@ -159,7 +159,7 @@ Authorization: Bearer <auth-key>
 | `/v1/responses`                     | `POST`       | 支持文本、搜索和图片工具调用的 Responses 入口        |
 | `/v1/messages`                      | `POST`       | Anthropic Messages 兼容入口                          |
 | `/v1/search`                        | `POST`       | 返回回答、引用来源和搜索结果                         |
-| `/v1/images/generations`            | `POST`       | 图片生成，支持 `n=1..4`                              |
+| `/v1/images/generations`            | `POST`       | 图片生成，支持 `n=1..image_max_n`，默认上限 4          |
 | `/v1/images/edits`                  | `POST`       | multipart、远程 URL、base64、data URL 和多参考图编辑 |
 | `/v1/images/generations/gif`        | `POST`       | 按提示词请求循环 GIF，输入参数与图片生成相同          |
 | `/v1/images/edits/gif`              | `POST`       | 将参考图制作成循环 GIF，输入方式与图片编辑相同        |
@@ -197,7 +197,9 @@ curl http://localhost:3000/v1/images/generations \
 
 实际可用模型以上游账号和 `/v1/models` 返回值为准。
 
-图片生成、编辑、聊天图片和 Responses 图片工具支持 `output_format`：`gif`、`png`、`jpg/jpeg`、`webp`。显式请求 GIF 时需使用设置页 `gif_models` 中启用的模型，默认启用 `gpt-image-2.6`、`gpt-image-2.6-flare` 和 `gpt-image-2.6-sunburst`，并且不能传入 `stream=true`。可选 `frame_count` 和 `frame_duration_ms` 原样传给上游提示词；省略时不补默认值。
+图片生成、编辑、聊天图片和 Responses 图片工具支持 `output_format`：`gif`、`png`、`jpg/jpeg`、`webp`。显式请求 GIF 时需使用设置页 `gif_models` 中启用的模型，默认启用 `gpt-image-2.6`、`gpt-image-2.6-flare` 和 `gpt-image-2.6-sunburst`。普通图片入口不支持 GIF 与 `stream=true` 同时使用；专用 GIF 接口始终返回 JSON。可选 `frame_count` 和 `frame_duration_ms` 原样传给上游提示词；省略时不补默认值。
+
+无参考图的生成请求还支持 `output_format=svg`，与 GIF 共用逐模型启用设置。SVG 使用文字模型生成并校验静态 XML，保留原始字节，支持 URL、Base64、图库和 WebDAV；不支持图片编辑、参考图或流式输出。Studio 参数面板提供输出格式、可选 GIF 帧参数和自定义图片数量；数量上限由 `image_max_n` 控制，默认 4，最小 1。
 
 <details>
 <summary>GIF 生成与参考图示例</summary>
@@ -234,6 +236,7 @@ GIF 接口固定返回普通 JSON，即使传入 `stream=true`。上游生成流
 | `CHATGPT2API_THREAD_TOKENS`      | `120`        | 后端同步工作线程并发容量，只要求正整数且不设固定最高值；账号、代理和上游仍有各自并发限制 |
 | `account_processing_concurrency` | `30`         | 账号导入、刷新、同步和批量处理容量                                                       |
 | `image_account_concurrency`      | `1`          | 单账号图片并发上限，可设置为 1–3                                                         |
+| `image_max_n`                    | `4`          | 单次图片请求的数量上限，最小 1；Studio 同步使用该上限                                      |
 | `image_stream_timeout_secs`      | `80`         | 图片上游 SSE / HTTP 流最长等待时间                                                       |
 | `image_poll_timeout_secs`        | `60`         | 图片结果解析与轮询最长等待时间                                                           |
 | `log_retention_hours`            | `24`         | 调用日志自动保留小时数                                                                   |

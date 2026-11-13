@@ -144,7 +144,7 @@ Authorization: Bearer <auth-key>
 | `/v1/responses` | `POST` | Responses entry point with text, search, and image tools |
 | `/v1/messages` | `POST` | Anthropic Messages-compatible entry point |
 | `/v1/search` | `POST` | Returns an answer, citations, and search results |
-| `/v1/images/generations` | `POST` | Image generation with `n=1..4` |
+| `/v1/images/generations` | `POST` | Image generation with `n=1..image_max_n` (default maximum: 4) |
 | `/v1/images/edits` | `POST` | Image editing from multipart files, remote URLs, base64, data URLs, or multiple references |
 | `/v1/images/generations/gif` | `POST` | Requests a looping GIF using the image-generation inputs |
 | `/v1/images/edits/gif` | `POST` | Requests a looping GIF from reference images using the image-edit inputs |
@@ -182,7 +182,9 @@ curl http://localhost:3000/v1/images/generations \
 
 Available models depend on the upstream accounts and the current `/v1/models` response.
 
-Image generation, edits, image chat, and Responses image tools accept `output_format`: `gif`, `png`, `jpg/jpeg`, or `webp`. Explicit GIF requests require a model enabled in the `gif_models` setting and do not support `stream=true`. The defaults are `gpt-image-2.6`, `gpt-image-2.6-flare`, and `gpt-image-2.6-sunburst`. Optional `frame_count` and `frame_duration_ms` values pass through to the upstream prompt as supplied; omitted values receive no defaults.
+Image generation, edits, image chat, and Responses image tools accept `output_format`: `gif`, `png`, `jpg/jpeg`, or `webp`. Explicit GIF requests require a model enabled in the `gif_models` setting. The defaults are `gpt-image-2.6`, `gpt-image-2.6-flare`, and `gpt-image-2.6-sunburst`. Standard image endpoints reject GIF with `stream=true`; dedicated GIF endpoints always return JSON. Optional `frame_count` and `frame_duration_ms` values pass through to the upstream prompt as supplied; omitted values receive no defaults.
+
+Generation requests without reference images also accept `output_format=svg`, using the same per-model eligibility setting as GIF. A text model generates bounded static SVG XML, which is validated and preserved through URL, Base64, gallery, and WebDAV delivery. SVG does not support edits, reference images, or streaming. Studio exposes output formats, optional GIF frame parameters, and custom image counts. The `image_max_n` setting controls the count limit, defaults to 4, and has a minimum of 1.
 
 <details>
 <summary>GIF generation and reference-image examples</summary>
@@ -219,6 +221,7 @@ Use a ChatGPT Web image model such as `gpt-image-2.6`. Dedicated GIF endpoints r
 | `CHATGPT2API_THREAD_TOKENS` | `120` | Capacity for synchronous backend worker threads; accepts any positive integer, while accounts, proxies, and upstream services retain their own limits |
 | `account_processing_concurrency` | `30` | Capacity for account imports, refreshes, synchronization, and batch processing |
 | `image_account_concurrency` | `1` | Per-account image concurrency, configurable from 1 to 3 |
+| `image_max_n` | `4` | Maximum images per request, at least 1; also used by Studio |
 | `image_stream_timeout_secs` | `80` | Maximum wait for the upstream image SSE/HTTP stream |
 | `image_poll_timeout_secs` | `60` | Maximum wait for image result polling and parsing |
 | `log_retention_hours` | `24` | Automatic call-record retention period in hours |

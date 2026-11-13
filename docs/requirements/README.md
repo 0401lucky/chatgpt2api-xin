@@ -32,7 +32,8 @@ requirements may move to `archive/` after links and this index are updated.
 | Requirement | Status |
 | --- | --- |
 | [0001: Animated GIF image APIs](0001-animated-gif-image-api.md) | pending-verification |
-| [0002: GIF output and gpt-image-2.6 compatibility](0002-image-gif-output.md) | pending-verification |
+| [0002: GIF/SVG output and gpt-image-2.6 compatibility](0002-image-gif-output.md) | pending-verification |
+| [0003: Account memory controls](0003-account-memory-controls.md) | pending-verification |
 
 PRDs are planning evidence, never proof that the product already behaves as
 described.

@@ -25,7 +25,8 @@ from services.protocol import (
     openai_v1_response,
     openai_search,
 )
-from utils.helper import has_response_image_generation_tool, is_image_chat_request
+from services.protocol.conversation import validate_image_output_request
+from utils.helper import has_response_image_generation_tool, is_image_chat_request, parse_image_count
 
 GIF_GENERATION_TIMEOUT_SECS = 300
 
@@ -33,7 +34,7 @@ GIF_GENERATION_TIMEOUT_SECS = 300
 class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
     model: str = "gpt-image-2"
-    n: int = Field(default=1, ge=1, le=4)
+    n: int = Field(default=1, ge=1)
     size: str | None = None
     quality: str = "auto"
     response_format: str = "b64_json"
@@ -144,6 +145,7 @@ def create_router() -> APIRouter:
     ):
         identity = require_identity(authorization)
         payload = body.model_dump(mode="python")
+        payload["n"] = parse_image_count(body.n)
         for field in ("output_format", "frame_count", "frame_duration_ms"):
             if field not in body.model_fields_set:
                 payload.pop(field, None)
@@ -153,6 +155,7 @@ def create_router() -> APIRouter:
             payload["stream"] = False
             payload["image_timeout_secs"] = GIF_GENERATION_TIMEOUT_SECS
         payload["base_url"] = resolve_image_base_url(request)
+        validate_image_output_request(body.model, body.output_format, stream=bool(payload.get("stream")))
         endpoint = "/v1/images/generations/gif" if gif else "/v1/images/generations"
         call = LoggedCall(identity, endpoint, body.model, "GIF 动图生成" if gif else "文生图", request_text=body.prompt)
         attach_trace_headers(call, request)
@@ -175,6 +178,12 @@ def create_router() -> APIRouter:
             payload["prompt"] = f"请将参考图片制作成可循环播放的动画 GIF，动作自然连贯：{prompt}"
             payload["stream"] = False
             payload["image_timeout_secs"] = GIF_GENERATION_TIMEOUT_SECS
+        validate_image_output_request(
+            model,
+            payload.get("output_format"),
+            stream=bool(payload.get("stream")),
+            has_references=True,
+        )
         endpoint = "/v1/images/edits/gif" if gif else "/v1/images/edits"
         call = LoggedCall(identity, endpoint, model, "参考图 GIF 动图生成" if gif else "图生图", request_text=prompt)
         attach_trace_headers(call, request)

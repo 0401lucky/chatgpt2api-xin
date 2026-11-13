@@ -1,19 +1,19 @@
-# 0002: GIF Output and gpt-image-2.6 Model Registration
+# 0002: GIF/SVG Output and gpt-image-2.6 Model Registration
 
 Status: pending-verification
 
 - Owner: unassigned
 - Created: 2026-11-05
-- Updated: 2026-11-06
+- Updated: 2026-11-13
 - Related issues/ADRs: ADR 0002, ADR 0003
 
 ## Problem and user outcome
 
 Callers need the three gpt-image-2.6 model names to work through the existing
-image interfaces and need a small, explicit image output format contract. Operators
-must be able to choose which supported image models may produce GIFs. A GIF
-response must remain an animated GIF through the existing URL, Base64, and
-image-storage paths.
+image interfaces and need a small, explicit image output format contract.
+Operators must be able to choose which supported image models may produce GIF
+or SVG output. GIF and SVG responses must remain source bytes through the
+existing URL, Base64, and image-storage paths.
 
 ## Baseline before the 3.2.4 synchronization
 
@@ -23,11 +23,11 @@ image-storage paths.
   new aliases use the same routing behavior and slug.
 - Image generation, edit, chat-image, and compatibility requests already share
   image execution plumbing that can carry optional request metadata.
-- Image responses and ImageStorageService currently have raster-image handling
-  that must be bypassed or extended for GIF bytes, file extension, and media
-  type.
-- The current image execution path and Responses path already have established
-  `n` and result-cardinality behavior. This requirement does not change it.
+- Image responses and ImageStorageService started with raster-image handling
+  that must be bypassed or extended for GIF and SVG bytes, file extension, and
+  media type.
+- Image requests originally accepted `n=1..4`. The later upstream integration
+  makes the maximum configurable while preserving Responses result cardinality.
 
 ## Scope
 
@@ -49,8 +49,8 @@ image-storage paths.
   ```
 
   The Settings page exposes the supported image model identifiers and lets the
-  operator add or remove each model independently. A GIF request is allowed
-  only when its selected model is present in `gif_models`.
+  operator add or remove each model independently. GIF and SVG requests are
+  allowed only when their selected model is present in `gif_models`.
 - Add these optional fields to the shared image execution request and preserve
   them through existing image generation, edit, chat-image, and compatibility
   entry points:
@@ -63,7 +63,7 @@ image-storage paths.
   }
   ```
 
-- Accept `output_format` values `gif`, `png`, `jpg`, `jpeg`, and `webp`; treat
+- Accept `output_format` values `gif`, `png`, `jpg`, `jpeg`, `webp`, and `svg`; treat
   `jpg` and `jpeg` as the same JPEG target. Append the selected format
   instruction to the derived internal prompt. Append `frame_count` and
   `frame_duration_ms` only when the corresponding request key is present. Use
@@ -77,35 +77,45 @@ image-storage paths.
   image upscaling, and other single-frame processing. Store and serve the
   result with a `.gif` extension and `image/gif` media type while reusing the
   existing URL, Base64, local storage, WebDAV, and backup flows.
+- Generate SVG through the text account pool only for image generations. Append
+  a private instruction requesting a complete static SVG document, extract it
+  from the text response, reject unsafe or invalid XML (including DTDs,
+  entities, and processing instructions), then preserve the validated bytes
+  with `.svg` and `image/svg+xml`. SVG edits, reference images, and streaming
+  are rejected before upstream execution.
 - For explicit `png`, `jpg`/`jpeg`, or `webp`, convert the upstream single-frame
   image locally before storage and response formatting. Store the converted
   bytes with the matching extension and media type.
-- Keep the existing Responses image result cardinality and all existing `n`
-  semantics unchanged.
+- Add `image_max_n` to the existing settings specification and model catalog,
+  with default 4 and minimum 1. Validate incoming counts through the shared
+  parser and expose custom counts in Studio. Historical Image Tasks retain
+  their original counts when operators later reduce the limit.
+- Keep the existing Responses image result cardinality unchanged.
 
 ## Non-goals
 
-- No change to `n`, multi-image collection, truncation, or result cardinality.
+- No change to multi-image collection or Responses result cardinality.
 - No new official API provider.
 - No new forced-URL or forced-Base64 setting; keep `image_force_url` and the
   existing response format behavior unchanged.
 - No R2 image-asset storage adapter and no change to Image Asset ownership.
-- No arbitrary output formats beyond `gif`, `png`, `jpg`/`jpeg`, and `webp`.
-- No new Studio Image Task controls or task-lifecycle changes.
+- No arbitrary output formats beyond `gif`, `png`, `jpg`/`jpeg`, `webp`, and
+  `svg`.
+- No change to the Studio Image Task lifecycle; the existing Studio composer may expose controls for the shared image request fields.
 
 ## Domain language
 
 - **Image Asset** and **Image Task** use the definitions in
   [`../../CONTEXT.md`](../../CONTEXT.md).
 - **`gif_models`** is the persisted list of supported image model identifiers
-  that are allowed to request GIF output.
+  allowed to request GIF or SVG output.
 
 ## Unique owners
 
 | Concern | Authoritative owner | Interface consumed by others | Forbidden mirror or fallback |
 | --- | --- | --- | --- |
 | Supported image models and routing | Existing model catalogue and backend model resolver | Supported-model set and upstream model slug | Endpoint-local model lists |
-| GIF eligibility | `Config` and `SettingsManagementService` | `/api/settings` projection and runtime accessor | Scope enums or handler-local defaults |
+| GIF/SVG eligibility | `Config` and `SettingsManagementService` | `/api/settings` projection and runtime accessor | Scope enums or handler-local defaults |
 | Request parsing and prompt hints | Existing image contracts and shared image execution request | Normalized request and derived upstream prompt | Per-endpoint GIF rules or prompt mutation |
 | Image output bytes and media type | Shared image result formatter, `ImageStorageService`, and image response adapter | Converted or preserved asset, URL, Base64, and MIME projection | Direct writes or endpoint-local conversion |
 
@@ -126,40 +136,47 @@ settings.
 
 ## Frontend interaction and responsive behavior
 
-Add a per-model GIF selection control to the existing Settings page. Populate
-the choices from the settings/model projection, reuse the current settings
-load, save, validation, conflict, and error behavior, and keep the control
-usable at the existing desktop and narrow-screen layouts. No new Studio
-interaction is included.
+Add a per-model GIF/SVG selection control to the existing Settings page.
+Populate the choices from the settings/model projection, reuse the current
+settings load, save, validation, conflict, and error behavior, and keep the
+control usable at the existing desktop and narrow-screen layouts. Extend the
+existing Studio image composer popover with output format and optional GIF
+frame fields, preserving the current Image Task lifecycle and request flow.
 
 ## Persistence impact
 
-Persist `gif_models` through the existing configuration/settings owner. Existing
-configurations without this field use the default three-model list; no data
-migration or ownership change is required. GIF assets continue through the
-existing ImageStorageService local/WebDAV and backup paths, with their GIF
-extension and media type retained.
+Persist `gif_models` through the existing configuration/settings owner.
+Existing configurations without this field use the default three-model list;
+no data migration or ownership change is required. GIF and SVG assets continue
+through the existing ImageStorageService local/WebDAV and backup paths, with
+their extensions and media types retained.
 
 ## Concurrency, security, and failure behavior
 
 Use the existing image request lifecycle, account selection, retries,
-deadlines, storage locks, URL safety checks, and cleanup behavior. Perform GIF
-eligibility and streaming checks before network work. Frame values are opaque
-request values and are not interpreted for validation. Storage failures follow
-the existing image-result failure path. Do not introduce new concurrency or
-retry rules.
+deadlines, storage locks, URL safety checks, and cleanup behavior. Perform
+format eligibility and unsupported edit/reference/stream checks before network
+work. Validate SVG as bounded static XML and reject active or external content.
+Frame values are opaque request values and are not interpreted for validation.
+Storage failures follow the existing image-result failure path. Do not
+introduce new concurrency or retry rules.
 
 ## Acceptance criteria
 
 - [ ] The three 2.6 aliases pass supported-model validation, appear in the
   built-in model catalogue, and all route to upstream slug `auto`. No `exact`
   alias or 1K mapping is added.
+- [ ] The model catalogue projects the enabled GIF/SVG model list; Studio only
+  offers GIF for an enabled model and SVG only when no reference image is set.
 - [ ] `gif_models` is persisted, defaults to the three 2.6 aliases, round-trips
   through `/api/settings` GET/PATCH, and allows independent per-model
   selection in the Settings page.
 - [ ] The shared image execution request carries `output_format`,
   `frame_count`, and `frame_duration_ms` through all existing image entry
   points that use it.
+- [ ] Studio's existing image parameter popover exposes output format and,
+  when GIF is selected, optional frame count and frame duration fields; empty
+  frame fields are omitted from the Image Task request.
 - [ ] Prompt tests prove that the selected output format and only-present frame fields are appended,
   omitted fields receive no defaults, supplied frame values are not validated
   or normalized, and the original prompt remains unchanged.
@@ -170,12 +187,20 @@ retry rules.
 - [ ] A multi-frame GIF fixture is returned and stored byte-for-byte unchanged
   with a `.gif` path and `image/gif` media type. URL, Base64, local, WebDAV,
   and existing backup behavior remain covered.
+- [ ] SVG is generated through the text account pool for eligible models;
+  generated XML is extracted, bounded, and rejected when it contains active
+  content, external references, DTDs, entities, or processing instructions.
+- [ ] Valid SVG bytes are returned unchanged in Base64 responses and stored or
+  served with `.svg` and `image/svg+xml` through local and WebDAV paths.
+- [ ] SVG edit/reference/stream requests are rejected before upstream work.
 - [ ] GIF processing does not invoke image upscaling or single-frame raster
   conversion.
 - [ ] Explicit PNG, JPEG, and WebP requests return converted bytes with the
   matching extension and media type through URL and Base64 responses.
-- [ ] Responses keeps its existing single-image behavior, and existing `n` and
-  multi-image behavior is unchanged.
+- [ ] Counts above 4 are accepted up to `image_max_n` through public image
+  interfaces and Studio; invalid counts are rejected before upstream work.
+- [ ] Historical task counts survive lowering the configured maximum.
+- [ ] Responses keeps its existing single-image behavior.
 
 ## Verification matrix
 
@@ -186,14 +211,31 @@ retry rules.
 | Request fields and prompt hints | Contract/unit | Generation, JSON/multipart edits, chat-image, Responses, and Web prompt checks | passed |
 | Eligibility and stream rejection | Contract/integration | Rejected requests do not invoke mocked upstream execution | passed |
 | GIF bytes, MIME, and storage | Unit/integration | Multi-frame fixture, local/WebDAV storage, synchronization, and response checks | passed |
+| SVG validation and constraints | Unit/contract | Safe/unsafe XML, text extraction, and request rejection tests | passed |
+| SVG delivery and storage | Unit/integration/browser | Original bytes, MIME, URL/Base64, gallery, and WebDAV checks | passed |
+| Configurable counts | Contract/runtime/browser | Settings, public requests, Studio fields, and historical task counts | passed |
 | Existing behavior boundaries | Contract/regression | Dedicated GIF routes, serial/parallel `n`, and Codex format/timeout checks | passed |
 
-The local compatibility suite passes 76 checks and the console production
-build passes. Browser verification covers Dashboard, Monitor, Studio, Accounts,
+The earlier 3.2.4 compatibility suite passed 76 checks and the console production
+build passed. Its browser verification covered Dashboard, Monitor, Studio, Accounts,
 Logs, Gallery, Proxy, and Settings at 1440x1000 and 390x844; Settings selection
-also passes keyboard and dark-theme checks. These checks use isolated data.
-Existing historical local tests still have failures present before this merge.
-Live upstream GIF generation and user acceptance remain pending.
+also passed keyboard and dark-theme checks. Those checks used isolated data.
+The 2026-11-13 integration of upstream `4336d05` passed 165 focused Python
+checks across the existing GIF interfaces, SVG/count updates, and memory
+controls, plus 11 frontend runtime checks and the console production build.
+The full Python run reported 173 passed, 18 failed, 4 skipped, and one
+collection error. The failures and collection error match the pre-merge
+baseline; older model-mapping/Sentinel tests and the Windows timezone-data
+dependency remain unresolved. The full frontend runtime command remains
+unavailable because its pre-existing ignored test files are absent.
+
+Isolated browser checks covered all eight main routes at 1440x1000 and
+390x844 without console errors, HTTP errors, or document horizontal overflow.
+Studio submitted seven GIF results with frame parameters, accepted a two-digit
+count, and kept its parameter popover open after choosing GIF. All seven
+results and the SVG gallery preview loaded. Settings saved and reloaded the
+count limit; dark theme and keyboard interactions were inspected. Live
+upstream SVG/GIF generation and user acceptance remain pending.
 
 Automated tests, browser verification, user acceptance, and publication remain
 separate states. Local tests must remain ignored and untracked as required by
@@ -202,7 +244,7 @@ the repository rules.
 ## Documentation and CHANGELOG impact
 
 During implementation, update the current backend map for model registration,
-image execution, and GIF storage behavior; inspect the settings contract
+image execution, and GIF/SVG storage behavior; inspect the settings contract
 documentation for the new field; and add an Unreleased entry to
 `CHANGELOG.md`. Do not update current documents or the changelog while this
 requirement remains a draft.
@@ -216,13 +258,13 @@ ownership is outside this requirement and requires a separate decision.
 
 ## Rollback
 
-Revert the 3.2.4 integration as one change while retaining the pre-existing
-dedicated GIF routes, Sentinel transport, and GIF asset compatibility. Existing
+Revert the relevant integration as one change while retaining the pre-existing
+dedicated GIF routes, Sentinel transport, and image asset compatibility. Existing
 settings and assets must remain readable. Deployment rollback restores the
 previous application image and preserves the data volume; do not delete stored
-GIF assets.
+GIF or SVG assets.
 
 ## Unresolved questions
 
-- None. The requested model aliases, shared upstream slug, per-model setting,
-  GIF request fields, and unchanged `n` behavior are defined above.
+- Live upstream SVG/GIF compatibility and user acceptance remain pending;
+  local tests and isolated browser checks do not establish either.

@@ -35,15 +35,23 @@ validation and `ModelCatalogService` consume this list; Studio consumes the
 backend catalog. Explicit catalog configuration still takes precedence over
 the built-in list. No `exact` aliases are added.
 
-The persisted `gif_models` setting controls explicit `output_format=gif`
-eligibility per image model.
-It defaults to the three 2.6 aliases and is projected through `/api/settings`.
+The persisted `gif_models` setting controls explicit GIF and SVG eligibility per image
+model. It defaults to the three 2.6 aliases and is projected through
+`/api/settings`.
 Image requests carry optional `output_format`, `frame_count`, and
 `frame_duration_ms` values through the shared image execution request.
-`output_format` accepts `gif`, `png`, `jpg`/`jpeg`, and `webp`. GIF bytes bypass
-raster upscaling/re-encoding and are stored with `.gif` and `image/gif`; the
-other explicit formats are converted locally before storage. Existing `n` and
-multi-image behavior is unchanged.
+`output_format` accepts `gif`, `png`, `jpg`/`jpeg`, `webp`, and `svg`. GIF bytes
+bypass raster upscaling/re-encoding and are stored with `.gif` and `image/gif`;
+SVG generation uses the text account pool for generation requests only;
+reference images and streaming are rejected. The result is validated as bounded
+static XML and stored with its original bytes, `.svg`, and `image/svg+xml`. The
+other explicit formats are converted locally before storage.
+
+`image_max_n` sets the request count limit, defaults to 4, and has a minimum of
+1. `parse_image_count` validates public generation, edit, chat-image, and Image
+Task requests. The model catalog projects the limit and enabled GIF/SVG models
+to Studio. Existing tasks retain their original counts when the limit is
+lowered; Responses retains its existing single-image result cardinality.
 
 The 2.5 identifiers use the existing `auto` upstream Web model slug. They are
 compatibility names and do not force a particular official API image engine or
@@ -77,6 +85,27 @@ routes retain their prompt and timeout behavior when `output_format` is omitted.
 The Codex image transport carries the requested format and defaults to PNG.
 Public examples are maintained in
 [`README.md`](../../README.md).
+
+### Upstream Account memory
+
+`POST /api/accounts/memory` starts an administrator-only `enable`, `disable`,
+`refresh`, or `clear` operation using existing selection and progress interfaces.
+The `memory_state` filter is shared by listing,
+pagination, selection preview and filtered batch/export membership. Empty selections are rejected and target IDs
+are fixed before the background worker starts.
+
+`AccountService.manage_account_memory` owns credentials, shared processing
+capacity, per-account mutation and stored snapshots. `OpenAIBackendAPI` owns
+the upstream `m3m` and saved-memory clearing protocols and verification.
+`account_view` independently projects the switch snapshot, clear record and
+allowed actions; `account_operation_events` distinguishes confirmed,
+pending verification and failed results. Metadata remains in the Account
+Repository without storing memory contents; progress retains the existing
+process-memory lifecycle. Account-local mutual exclusion applies within one
+process, while credential and operation compare-and-swap guards reject stale
+metadata writes. It does not serialize upstream calls across processes.
+See [critical-flows.md](critical-flows.md#upstream-account-memory-maintenance)
+for verification and protocol evidence.
 
 ## Domain and persistence ownership
 
